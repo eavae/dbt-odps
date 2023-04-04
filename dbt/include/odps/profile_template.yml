@@ -1,0 +1,12 @@
+fixed:
+  type: odps
+prompts:
+  endpoint:
+    hint: "The endpoint of odps instance, know more https://help.aliyun.com/document_detail/34951.html"
+  access_id:
+    hint: "The access id of your account."
+  secret_access_key:
+    hint: "The secret access key of your account."
+    hide_input: true
+  project:
+    hint: "The project name of your odps instance."
