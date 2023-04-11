@@ -1,12 +1,14 @@
-import dbt.exceptions  # noqa
+import dbt.exceptions
 from contextlib import contextmanager
 from dataclasses import dataclass
-from dbt.adapters.base import Credentials, BaseConnectionManager
+from dbt.adapters.base import Credentials
+from dbt.adapters.sql import SQLConnectionManager
 from dbt.logger import GLOBAL_LOGGER as logger
-from odps import ODPS
+from dbt.contracts.connection import AdapterResponse, ConnectionState
+from odps.dbapi import Connection as ODPSConnection
 
 
-@dataclass
+@dataclass(order=False)
 class ODPSCredentials(Credentials):
     """
     Defines database specific credentials that get added to
@@ -17,9 +19,8 @@ class ODPSCredentials(Credentials):
     endpoint: str
     access_id: str
     secret_access_key: str
-    project: str
 
-    _ALIASES = {"access_id": "ak", "secret_access_key": "sk"}
+    _ALIASES = {"ak": "access_id", "sk": "secret_access_key"}
 
     @property
     def type(self):
@@ -32,38 +33,39 @@ class ODPSCredentials(Credentials):
         Hashed and included in anonymous telemetry to track adapter adoption.
         Pick a field that can uniquely identify one team/organization building with this adapter
         """
-        return self.project
+        return self.endpoint + "#" + self.database
+
+    def __post_init__(self):
+        # TODO: remove this once we have a better way to handle schemas
+        self.schema = ""
 
     def _connection_keys(self):
         """
         List of keys to display in the `dbt debug` output.
         """
-        return ("endpoint", "access_id", "project")
+        return ("endpoint", "access_id", "database")
 
 
-class ODPSConnectionManager(BaseConnectionManager):
+class ODPSConnectionManager(SQLConnectionManager):
     TYPE = "odps"
 
     @contextmanager
-    def exception_handler(self, sql: str):
-        """
-        Returns a context manager, that will handle exceptions raised
-        from queries, catch, log, and raise dbt exceptions it knows how to handle.
-        """
-        # ## Example ##
-        # try:
-        #     yield
-        # except myadapter_library.DatabaseError as exc:
-        #     self.release(connection_name)
+    def exception_handler(self, sql):
+        try:
+            yield
 
-        #     logger.debug("myadapter error: {}".format(str(e)))
-        #     raise dbt.exceptions.DatabaseException(str(exc))
-        # except Exception as exc:
-        #     logger.debug("Error running SQL: {}".format(sql))
-        #     logger.debug("Rolling back transaction.")
-        #     self.release(connection_name)
-        #     raise dbt.exceptions.RuntimeException(str(exc))
-        pass
+        except Exception as exc:
+            logger.debug("Error while running:\n{}".format(sql))
+            logger.debug(exc)
+            if len(exc.args) == 0:
+                raise
+
+            thrift_resp = exc.args[0]
+            if hasattr(thrift_resp, "status"):
+                msg = thrift_resp.status.errorMessage
+                raise dbt.exceptions.DbtRuntimeError(msg)
+            else:
+                raise dbt.exceptions.DbtRuntimeError(str(exc))
 
     @classmethod
     def open(cls, connection):
@@ -71,21 +73,23 @@ class ODPSConnectionManager(BaseConnectionManager):
         Receives a connection object and a Credentials object
         and moves it to the "open" state.
         """
-        if connection.state == "open":
+        if connection.state == ConnectionState.OPEN:
             logger.debug("Connection is already open, skipping open.")
             return connection
 
         credentials: ODPSCredentials = connection.credentials
 
         try:
-            handle = ODPS(
+            handle = ODPSConnection(
                 endpoint=credentials.endpoint,
                 access_id=credentials.access_id,
                 secret_access_key=credentials.secret_access_key,
-                project=credentials.project,
+                project=credentials.database,
             )
+            if not handle.odps.exist_project(credentials.database):
+                raise dbt.exceptions.FailedToConnectError(f"Project {credentials.database} does not exist.")
             connection.state = "open"
-            connection.handle = handle
+            connection.handle = connection
         except Exception as exc:
             logger.debug("Error opening connection: {}".format(exc))
             connection.handle = None
@@ -94,26 +98,24 @@ class ODPSConnectionManager(BaseConnectionManager):
         return connection
 
     @classmethod
-    def get_response(cls, cursor):
-        """
-        Gets a cursor object and returns adapter-specific information
-        about the last executed command generally a AdapterResponse object
-        that has items such as code, rows_affected,etc. can also just be a string ex. "OK"
-        if your cursor does not offer rich metadata.
-        """
-        # ## Example ##
-        # return cursor.status_message
-        pass
+    def get_response(cls, cursor) -> AdapterResponse:
+        # ODPS does not support cursor and rowcount
+        # https://github.com/dbt-labs/dbt-spark/issues/142
+        message = "OK"
+        return AdapterResponse(_message=message)
+
+    # No transactions on ODPS....
+    def add_begin_query(self, *args, **kwargs):
+        logger.debug("Not Supported: add_begin_query")
+
+    def add_commit_query(self, *args, **kwargs):
+        logger.debug("Not Supported: add_commit_query")
+
+    def commit(self, *args, **kwargs):
+        logger.debug("Not Supported: commit")
+
+    def rollback(self, *args, **kwargs):
+        logger.debug("Not Supported: rollback")
 
     def cancel(self, connection):
-        """
-        Gets a connection object and attempts to cancel any ongoing queries.
-        """
-        # ## Example ##
-        # tid = connection.handle.transaction_id()
-        # sql = "select cancel_transaction({})".format(tid)
-        # logger.debug("Cancelling query "{}" ({})".format(connection_name, pid))
-        # _, cursor = self.add_query(sql, "master")
-        # res = cursor.fetchone()
-        # logger.debug("Canceled query "{}": {}".format(connection_name, res))
-        pass
+        connection.handle.cancel()
