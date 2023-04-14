@@ -72,3 +72,35 @@ def config_from_parts_or_dicts(project, profile, packages=None, selectors=None, 
     args.vars = cli_vars
     args.profile_dir = "/dev/null"
     return RuntimeConfig.from_parts(project=project, profile=profile, args=args)
+
+
+def load_internal_manifest_macros(config, macro_hook=lambda m: None):
+    from dbt.parser.manifest import ManifestLoader
+
+    return ManifestLoader.load_macros(config, macro_hook)
+
+
+def inject_plugin(plugin):
+    from dbt.adapters.factory import FACTORY
+
+    key = plugin.adapter.type()
+    FACTORY.plugins[key] = plugin
+
+
+def clear_plugin(plugin):
+    from dbt.adapters.factory import FACTORY
+
+    key = plugin.adapter.type()
+    FACTORY.plugins.pop(key, None)
+    FACTORY.adapters.pop(key, None)
+
+
+def inject_adapter(value, plugin):
+    """Inject the given adapter into the adapter factory, so your hand-crafted
+    artisanal adapter will be available from get_adapter() as if dbt loaded it.
+    """
+    inject_plugin(plugin)
+    from dbt.adapters.factory import FACTORY
+
+    key = value.type()
+    FACTORY.adapters[key] = value

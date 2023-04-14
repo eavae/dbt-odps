@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from dbt.adapters.base import Credentials
 from dbt.adapters.sql import SQLConnectionManager
 from dbt.logger import GLOBAL_LOGGER as logger
-from dbt.contracts.connection import AdapterResponse, ConnectionState
-from odps.dbapi import Connection as ODPSConnection
+from dbt.contracts.connection import AdapterResponse, ConnectionState, AdapterRequiredConfig
+from .dbapi import ODPSConnection
 
 
 @dataclass(order=False)
@@ -35,10 +35,6 @@ class ODPSCredentials(Credentials):
         """
         return self.endpoint + "#" + self.database
 
-    def __post_init__(self):
-        # TODO: remove this once we have a better way to handle schemas
-        self.schema = ""
-
     def _connection_keys(self):
         """
         List of keys to display in the `dbt debug` output.
@@ -48,6 +44,12 @@ class ODPSCredentials(Credentials):
 
 class ODPSConnectionManager(SQLConnectionManager):
     TYPE = "odps"
+
+    def __init__(self, profile: AdapterRequiredConfig):
+        # disable query comment for odps, since it's not supported
+        profile.query_comment.comment = None
+
+        super().__init__(profile)
 
     @contextmanager
     def exception_handler(self, sql):
@@ -78,7 +80,6 @@ class ODPSConnectionManager(SQLConnectionManager):
             return connection
 
         credentials: ODPSCredentials = connection.credentials
-
         try:
             handle = ODPSConnection(
                 endpoint=credentials.endpoint,
@@ -87,9 +88,11 @@ class ODPSConnectionManager(SQLConnectionManager):
                 project=credentials.database,
             )
             if not handle.odps.exist_project(credentials.database):
+                logger.debug("Project {} does not exist".format(credentials.database))
                 raise dbt.exceptions.FailedToConnectError(f"Project {credentials.database} does not exist.")
+
             connection.state = "open"
-            connection.handle = connection
+            connection.handle = handle
         except Exception as exc:
             logger.debug("Error opening connection: {}".format(exc))
             connection.handle = None
