@@ -6,8 +6,10 @@ from dbt.adapters.base.relation import BaseRelation
 from dbt.contracts.relation import Policy, RelationType
 from typing import List
 from typing_extensions import TypeAlias
+from .errors import NotTableError
 
 LIST_RELATIONS_MACRO_NAME = "list_relations_without_caching"
+SHOW_CREATE_TABLE_MACRO_NAME = "show_create_table"
 
 
 @dataclass
@@ -73,20 +75,32 @@ class ODPSAdapter(SQLAdapter):
         schema_relation: BaseRelation,
     ) -> List[OdpsRelation]:
         kwargs = {"schema_relation": schema_relation}
-        results = self.execute_macro(LIST_RELATIONS_MACRO_NAME, kwargs=kwargs)
+        table_names = self.execute_macro(LIST_RELATIONS_MACRO_NAME, kwargs=kwargs)
+        pure_table_names = [tbl.split(":")[-1] for tbl in table_names.split("\n") if tbl != ""]
 
         relations = []
-        for (table_names,) in results:
-            table_name_arr = [tbl.split(":")[-1] for tbl in table_names.split("\n") if tbl != ""]
-            for table_name in table_name_arr:
-                relations.append(
-                    OdpsRelation.create(
+        for table_name in pure_table_names:
+            try:
+                kwargs = {
+                    "relation": OdpsRelation.create(
                         database=schema_relation.database,
                         schema=schema_relation.schema,
                         identifier=table_name,
-                        type=RelationType.Table,
                     )
+                }
+                self.execute_macro(SHOW_CREATE_TABLE_MACRO_NAME, kwargs=kwargs)
+                table_type = RelationType.Table
+            except NotTableError:
+                table_type = RelationType.View
+
+            relations.append(
+                OdpsRelation.create(
+                    database=schema_relation.database,
+                    schema=schema_relation.schema,
+                    identifier=table_name,
+                    type=table_type,
                 )
+            )
         return relations
 
 

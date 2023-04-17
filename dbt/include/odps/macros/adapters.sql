@@ -4,7 +4,8 @@
     show tables
   {%- endcall %}
 
-  {% do return(load_result('list_relations_without_caching').table) %}
+  {% set result = load_result('list_relations_without_caching') %}
+  {% do return(result.table[0][0]) %}
 {% endmacro %}
 
 {% macro odps__drop_relation(relation) -%}
@@ -53,4 +54,44 @@
   {% endfor %}
 
   {{ return(statements[0]) }}
+{% endmacro %}
+
+{# tested #}
+{% macro odps__create_view_as(relation, sql) -%}
+  create or replace view {{ relation }}
+    {% set contract_config = config.get('contract') %}
+    {% if contract_config.enforced %}
+      {{ get_assert_columns_equivalent(sql) }}
+    {%- endif %}
+  as {{ sql }};
+{%- endmacro %}
+
+{# tested #}
+{% macro odps__create_table_as(temporary, relation, sql) -%}
+  create table {{ relation }}
+    {% set contract_config = config.get('contract') %}
+    {% if contract_config.enforced %}
+      {{ get_assert_columns_equivalent(sql) }}
+      {{ get_columns_spec_ddl() }}
+      {%- set sql = get_select_subquery(sql) %}
+    {%- endif %}
+  as {{ sql }};
+{%- endmacro %}
+
+{# tested #}
+{% macro default__rename_relation(from_relation, to_relation) -%}
+  {% set target_name = adapter.quote_as_configured(to_relation.identifier, 'identifier') %}
+  {% call statement('rename_relation') -%}
+    alter {{ from_relation.type }} {{ from_relation }} rename to {{ target_name }}
+  {%- endcall %}
+{% endmacro %}
+
+{# tested #}
+{% macro show_create_table(relation) %}
+  {% call statement('show_create_table', fetch_result=True) -%}
+    show create table {{ relation }}
+  {%- endcall %}
+
+  {% set result = load_result('show_create_table') %}
+  {% do return(result.table[0][0]) %}
 {% endmacro %}

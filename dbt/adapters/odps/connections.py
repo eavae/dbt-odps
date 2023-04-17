@@ -5,7 +5,9 @@ from dbt.adapters.base import Credentials
 from dbt.adapters.sql import SQLConnectionManager
 from dbt.logger import GLOBAL_LOGGER as logger
 from dbt.contracts.connection import AdapterResponse, ConnectionState, AdapterRequiredConfig
+from odps.errors import ODPSError
 from .dbapi import ODPSConnection
+from .errors import NotTableError
 
 
 @dataclass(order=False)
@@ -55,10 +57,14 @@ class ODPSConnectionManager(SQLConnectionManager):
     def exception_handler(self, sql):
         try:
             yield
-
         except Exception as exc:
             logger.debug("Error while running:\n{}".format(sql))
             logger.debug(exc)
+
+            print(exc)
+            if isinstance(exc, ODPSError) and exc.code == "ODPS-0130071":
+                raise NotTableError(exc.code, exc.args[0])
+
             if len(exc.args) == 0:
                 raise
 
