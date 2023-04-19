@@ -5,9 +5,19 @@ from dbt.adapters.base import Credentials
 from dbt.adapters.sql import SQLConnectionManager
 from dbt.logger import GLOBAL_LOGGER as logger
 from dbt.contracts.connection import AdapterResponse, ConnectionState, AdapterRequiredConfig
+from dbt.dataclass_schema import StrEnum
 from odps.errors import ODPSError
 from .dbapi import ODPSConnection
 from .errors import NotTableError
+
+DEFAULT_HINTS = {
+    "odps.sql.allow.cartesian": "true",
+}
+
+
+@dataclass
+class SchemaTypes(StrEnum):
+    PREFIX_SCHEMA = "prefix_schema"
 
 
 @dataclass(order=False)
@@ -21,6 +31,7 @@ class ODPSCredentials(Credentials):
     endpoint: str
     access_id: str
     secret_access_key: str
+    schema_type: SchemaTypes = SchemaTypes.PREFIX_SCHEMA
 
     _ALIASES = {"ak": "access_id", "sk": "secret_access_key"}
 
@@ -41,7 +52,7 @@ class ODPSCredentials(Credentials):
         """
         List of keys to display in the `dbt debug` output.
         """
-        return ("endpoint", "access_id", "database")
+        return ("endpoint", "access_id", "database", "schema", "schema_type")
 
 
 class ODPSConnectionManager(SQLConnectionManager):
@@ -61,7 +72,6 @@ class ODPSConnectionManager(SQLConnectionManager):
             logger.debug("Error while running:\n{}".format(sql))
             logger.debug(exc)
 
-            print(exc)
             if isinstance(exc, ODPSError) and exc.code == "ODPS-0130071":
                 raise NotTableError(exc.code, exc.args[0])
 
@@ -92,6 +102,7 @@ class ODPSConnectionManager(SQLConnectionManager):
                 access_id=credentials.access_id,
                 secret_access_key=credentials.secret_access_key,
                 project=credentials.database,
+                hints=DEFAULT_HINTS,
             )
             if not handle.odps.exist_project(credentials.database):
                 logger.debug("Project {} does not exist".format(credentials.database))

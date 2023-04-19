@@ -68,7 +68,7 @@
 
 {# tested #}
 {% macro odps__create_table_as(temporary, relation, sql) -%}
-  create table {{ relation }}
+  create table if not exists {{ relation }}
     {% set contract_config = config.get('contract') %}
     {% if contract_config.enforced %}
       {{ get_assert_columns_equivalent(sql) }}
@@ -79,10 +79,18 @@
 {%- endmacro %}
 
 {# tested #}
-{% macro default__rename_relation(from_relation, to_relation) -%}
-  {% set target_name = adapter.quote_as_configured(to_relation.identifier, 'identifier') %}
+{% macro odps__rename_relation(from_relation, to_relation) -%}
+  {% set target_name = adapter.quote_for_rename(to_relation) %}
   {% call statement('rename_relation') -%}
-    alter {{ from_relation.type }} {{ from_relation }} rename to {{ target_name }}
+    {% if not from_relation.type %}
+      {% do exceptions.raise_database_error("Cannot rename a relation with a blank type: " ~ from_relation.identifier) %}
+    {% elif from_relation.type in ('table') %}
+        alter table {{ from_relation }} rename to {{ target_name }}
+    {% elif from_relation.type == 'view' %}
+        alter view {{ from_relation }} rename to {{ target_name }}
+    {% else %}
+      {% do exceptions.raise_database_error("Unknown type '" ~ from_relation.type ~ "' for relation: " ~ from_relation.identifier) %}
+    {% endif %}
   {%- endcall %}
 {% endmacro %}
 

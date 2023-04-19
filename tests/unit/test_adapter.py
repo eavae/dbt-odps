@@ -48,9 +48,6 @@ class TestOdpsAdapter(unittest.TestCase):
 
         self.config = config_from_parts_or_dicts(project_cfg, profile_cfg)
 
-    def test_schema_is_empty_always(self):
-        assert self.config.credentials.schema == ""
-
     @mock.patch("dbt.adapters.odps.connections.ODPSConnection")
     def test_acquire_connection_validations(self, ODPSConnection):
         adapter = ODPSAdapter(self.config)

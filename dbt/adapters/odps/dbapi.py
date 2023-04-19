@@ -1,14 +1,4 @@
-from decimal import Decimal
 from odps.dbapi import Connection, Cursor
-from odps.utils import to_str
-
-
-def is_numeric(value):
-    return isinstance(value, (int, float, Decimal))
-
-
-def quote(value):
-    return f"'{to_str(value)}'" if not is_numeric(value) else to_str(value)
 
 
 class ODPSCursor(Cursor):
