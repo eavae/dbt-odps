@@ -17,6 +17,7 @@ pytest-logbook
 pytest-csv
 pytest-xdist
 pytz
+pandas
 tox>=3.13
 twine
 wheel

@@ -89,7 +89,7 @@ class ODPSAdapter(SQLAdapter):
 
         self.cache_dropped(relation)
         table = self.get_odps_table_by_relation(relation)
-        if table:
+        if table and not table.is_virtual_view:
             table.drop()
 
     def quote(self, identifier):
@@ -155,7 +155,7 @@ class ODPSAdapter(SQLAdapter):
     def get_columns_in_relation(self, relation: OdpsRelation):
         odps_table = self.get_odps_table_by_relation(relation)
         return (
-            [OdpsColumn.from_odps_column(column) for column in odps_table.schema.get_columns()]
+            [OdpsColumn.from_odps_column(column) for column in odps_table.table_schema.simple_columns]
             if odps_table
             else []
         )

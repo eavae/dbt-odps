@@ -80,75 +80,58 @@
 {% endmacro %}
 
 
-
-
-{% macro build_insert_into_snapshot_staging_table(strategy, source_sql, target_relation, staging_table) -%}
-    {%- set dest_columns = adapter.get_columns_in_relation(staging_table) | list -%}
-    {%- set dest_cols_csv = dest_columns | map(attribute='quoted') | join(', ') -%}
-
-    with snapshot_query as (
-        {{ source_sql }}
-    ),
-    snapshotted_data as (
-        select *,
-            {{ strategy.unique_key }} as dbt_unique_key
-        from {{ target_relation }}
-        where dbt_valid_to is null
-    ),
-    insertions_source_data as (
-        select
-            *,
-            {{ strategy.unique_key }} as dbt_unique_key,
-            {{ strategy.updated_at }} as dbt_updated_at,
-            {{ strategy.updated_at }} as dbt_valid_from,
-            nullif({{ strategy.updated_at }}, {{ strategy.updated_at }}) as dbt_valid_to,
-            {{ strategy.scd_id }} as dbt_scd_id
-        from snapshot_query
-    ),
-    updates_source_data as (
-        select
-            *,
-            {{ strategy.unique_key }} as dbt_unique_key,
-            {{ strategy.updated_at }} as dbt_updated_at,
-            {{ strategy.updated_at }} as dbt_valid_from,
-            {{ strategy.updated_at }} as dbt_valid_to
-        from snapshot_query
-    ),
-
-    {%- if strategy.invalidate_hard_deletes %}
-    deletes_source_data as (
-        select
-            *,
-            {{ strategy.unique_key }} as dbt_unique_key
-        from snapshot_query
-    ),
-    {% endif %}
-
-    insertions as (
+{% macro odps__snapshot_staging_table(strategy, source_sql, target_relation) -%}
+    select * from (
         select
             'insert' as dbt_change_type,
             source_data.*
-        from insertions_source_data as source_data
-        left outer join snapshotted_data on snapshotted_data.dbt_unique_key = source_data.dbt_unique_key
+        from (
+            select
+                *,
+                {{ strategy.unique_key }} as dbt_unique_key,
+                {{ strategy.updated_at }} as dbt_updated_at,
+                {{ strategy.updated_at }} as dbt_valid_from,
+                nullif({{ strategy.updated_at }}, {{ strategy.updated_at }}) as dbt_valid_to,
+                {{ strategy.scd_id }} as dbt_scd_id
+            from ({{ source_sql }})
+        ) as source_data
+        left outer join (
+            select *,
+                {{ strategy.unique_key }} as dbt_unique_key
+            from {{ target_relation }}
+            where dbt_valid_to is null
+        ) as snapshotted_data on snapshotted_data.dbt_unique_key = source_data.dbt_unique_key
         where
             snapshotted_data.dbt_unique_key is null
             or
             (snapshotted_data.dbt_unique_key is not null and ({{ strategy.row_changed }}))
-    ),
-
-    updates as (
+    ) as insertions
+    union all
+    select * from (
         select
             'update' as dbt_change_type,
             source_data.*,
             snapshotted_data.dbt_scd_id
-        from updates_source_data as source_data
-        join snapshotted_data on snapshotted_data.dbt_unique_key = source_data.dbt_unique_key
+        from (
+            select
+                *,
+                {{ strategy.unique_key }} as dbt_unique_key,
+                {{ strategy.updated_at }} as dbt_updated_at,
+                {{ strategy.updated_at }} as dbt_valid_from,
+                {{ strategy.updated_at }} as dbt_valid_to
+            from ({{ source_sql }})
+        ) as source_data
+        join (
+            select *,
+                {{ strategy.unique_key }} as dbt_unique_key
+            from {{ target_relation }}
+            where dbt_valid_to is null
+        ) as snapshotted_data on snapshotted_data.dbt_unique_key = source_data.dbt_unique_key
         where ({{ strategy.row_changed }})
-    )
-
-    {%- if strategy.invalidate_hard_deletes -%}
-    ,
-    deletes as (
+    ) as updates
+    {%- if strategy.invalidate_hard_deletes %}
+    union all
+    select * from (
         select
             'delete' as dbt_change_type,
             source_data.*,
@@ -156,27 +139,39 @@
             {{ snapshot_get_time() }} as dbt_updated_at,
             {{ snapshot_get_time() }} as dbt_valid_to,
             snapshotted_data.dbt_scd_id
-        from snapshotted_data
-        left join deletes_source_data as source_data on snapshotted_data.dbt_unique_key = source_data.dbt_unique_key
+        from (
+            select *,
+                {{ strategy.unique_key }} as dbt_unique_key
+            from {{ target_relation }}
+            where dbt_valid_to is null
+        ) as snapshotted_data
+        left join (
+            select
+                *,
+                {{ strategy.unique_key }} as dbt_unique_key
+            from snapshot_query
+        ) as source_data on snapshotted_data.dbt_unique_key = source_data.dbt_unique_key
         where source_data.dbt_unique_key is null
-    )
+    ) as deletes
     {%- endif %}
-
-    ,
-    final as (
-        select * from insertions
-        union all
-        select * from updates
-        {%- if strategy.invalidate_hard_deletes %}
-        union all
-        select * from deletes
-        {%- endif %}
-    )
-    insert into {{ staging_table }} ({{ dest_cols_csv }})
-    select {{ dest_cols_csv }} from final
 
 {%- endmacro %}
 
+{% macro odps_build_snapshot_staging_table(strategy, sql, target_relation) %}
+    {%- set temp_identifier = target_relation.identifier ~ '__dbt_tmp' -%}
+    {%- set temp_relation = api.Relation.create(identifier=temp_identifier,
+                                                schema=target_relation.schema,
+                                                database=none,
+                                                type='view') -%}
+
+    {% set select_sql = snapshot_staging_table(strategy, sql, target_relation) %}
+
+    {% call statement('build_snapshot_staging_relation') %}
+        {{ create_view_as(temp_relation, select_sql) }}
+    {% endcall %}
+
+    {% do return(temp_relation) %}
+{% endmacro %}
 
 {% materialization snapshot, adapter='odps' %}
     {%- set config = model['config'] -%}
@@ -216,14 +211,8 @@
         {% set final_sql = build_snapshot_full_refresh_insert_into(strategy, model['compiled_code'], target_relation) %}
     {% else %}
         {{ adapter.valid_snapshot_target(target_relation) }}
-        {% set staging_table = make_temp_relation(target_relation) %}
-        {% do build_snapshot_table_like(strategy, source_columns, staging_table, true) %}
-
-        {# create stage model #}
-        {% call statement('create_snapshot_table') %}
-            {{ build_insert_into_snapshot_staging_table(strategy, model['compiled_code'], target_relation, staging_table) }}
-        {% endcall %}
-
+        {% set staging_table = odps_build_snapshot_staging_table(strategy, model['compiled_code'], target_relation) %}
+        
         -- this may no-op if the database does not require column expansion
         {% do adapter.expand_target_column_types(from_relation=staging_table,
                                                 to_relation=target_relation) %}
@@ -276,7 +265,6 @@
     {{ adapter.commit() }}
 
     {% if staging_table is defined %}
-        {% do drop_relation(staging_table) %}
         {% do post_snapshot(staging_table) %}
     {% endif %}
 
