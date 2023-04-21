@@ -7,7 +7,8 @@ from typing import Any
 
 @dataclass
 class OdpsColumn(Column):
-    odps_column: TableSchema.TableColumn = None
+    table_column: TableSchema.TableColumn = None
+    comment: str = None
 
     def literal(self, value) -> str:
         return f"cast({value} as {self.dtype})"
@@ -52,5 +53,6 @@ class OdpsColumn(Column):
             char_size=char_size,
             numeric_precision=numeric_precision,
             numeric_scale=numeric_scale,
-            odps_column=column,
+            table_column=column,
+            comment=column.comment,
         )

@@ -1,12 +1,57 @@
-{# tested #}
-{% macro odps__list_relations_without_caching(relation) %}
-  {% call statement('list_relations_without_caching', fetch_result=True) -%}
-    show tables
-  {%- endcall %}
+{% macro lifecycle_clause(temporary) %}
+  {{ return(adapter.dispatch('lifecycle_clause', 'dbt')(temporary)) }}
+{%- endmacro -%}
 
-  {% set result = load_result('list_relations_without_caching') %}
-  {% do return(result.table[0][0]) %}
-{% endmacro %}
+
+{% macro odps__lifecycle_clause(temporary) %}
+  {%- set lifecycle = config.get('lifecycle') -%}
+  {%- if lifecycle is not none -%}
+    lifecycle {{ lifecycle }}
+  {%- elif temporary -%}
+    lifecycle 1
+  {%- endif %}
+{%- endmacro -%}
+
+
+{% macro properties_clause() %}
+  {{ return(adapter.dispatch('properties_clause', 'dbt')()) }}
+{%- endmacro -%}
+
+
+{% macro odps__properties_clause() %}
+  {%- set properties = config.get('properties', none) -%}
+  {%- if properties is not none -%}
+    tblproperties(
+    {%- for k, v in properties.items() -%}'{{ k }}'='{{ v }}'
+    {%- if not loop.last %},{% endif -%}
+    {%- endfor -%}
+    )
+  {%- endif %}
+{%- endmacro -%}
+
+
+{% macro partitioned_by_clause() %}
+  {{ return(adapter.dispatch('partitioned_by_clause', 'dbt')()) }}
+{%- endmacro -%}
+
+
+{% macro odps__partitioned_by_clause() %}
+  {%- set partitioned_by = config.get('partitioned_by', none) -%}
+  {%- if partitioned_by is not none -%}
+    partitioned by (
+    {%- for item in partitioned_by -%}
+      {{ item['col_name'] }} {{ item['data_type'] or 'string' }}{%- if item['comment'] %} comment '{{ item['comment'] }}'{%- endif -%}
+      {%- if not loop.last %}, {% endif -%}
+    {%- endfor -%}
+    )
+  {%- endif %}
+{%- endmacro -%}
+
+
+{%- macro odps__current_timestamp() -%}
+  current_timestamp()
+{%- endmacro -%}
+
 
 {% macro odps__drop_relation(relation) -%}
   {% call statement('drop_relation', auto_begin=False) -%}
@@ -75,8 +120,12 @@
       {{ get_columns_spec_ddl() }}
       {%- set sql = get_select_subquery(sql) %}
     {%- endif %}
-  as {{ sql }};
+    {{ partitioned_by_clause() }}
+    {{ properties_clause() }}
+    {{ lifecycle_clause(temporary) }}
+  as {{ sql }}
 {%- endmacro %}
+
 
 {# tested #}
 {% macro odps__rename_relation(from_relation, to_relation) -%}

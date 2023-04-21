@@ -6,12 +6,17 @@ from dbt.adapters.sql import SQLConnectionManager
 from dbt.logger import GLOBAL_LOGGER as logger
 from dbt.contracts.connection import AdapterResponse, ConnectionState, AdapterRequiredConfig
 from dbt.dataclass_schema import StrEnum
-from odps.errors import ODPSError
 from .dbapi import ODPSConnection
-from .errors import NotTableError
+
 
 DEFAULT_HINTS = {
     "odps.sql.allow.cartesian": "true",
+    "odps.sql.type.system.odps2": "true",
+    "odps.sql.hive.compatible": "true",
+    "odps.sql.reshuffle.dynamicpt": "false",
+    "odps.sql.groupby.skewindata": "true",
+    "hive.exec.dynamic.partition": "true",
+    "hive.exec.dynamic.partition.mode": "nonstrict",
 }
 
 
@@ -71,9 +76,6 @@ class ODPSConnectionManager(SQLConnectionManager):
         except Exception as exc:
             logger.debug("Error while running:\n{}".format(sql))
             logger.debug(exc)
-
-            if isinstance(exc, ODPSError) and exc.code == "ODPS-0130071":
-                raise NotTableError(exc.code, exc.args[0])
 
             if len(exc.args) == 0:
                 raise

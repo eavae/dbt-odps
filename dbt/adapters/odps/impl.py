@@ -1,12 +1,16 @@
 import agate
+from dataclasses import dataclass
 from dbt.adapters.sql import SQLAdapter
+from dbt.adapters.base import AdapterConfig
 from dbt.adapters.base.relation import BaseRelation, InformationSchema
 from dbt.adapters.base.meta import available
 from dbt.contracts.graph.manifest import Manifest
-from typing import List, Set, cast
+from dbt.exceptions import RelationTypeNullError
+from typing import List, Set, cast, Optional, Dict
 from typing_extensions import TypeAlias
 from odps import ODPS
 from odps.models import Table, TableSchema
+from odps.errors import NoSuchObject
 from .relation import OdpsRelation
 from .colums import OdpsColumn
 from .connections import ODPSConnectionManager, ODPSCredentials, SchemaTypes
@@ -14,6 +18,12 @@ from .connections import ODPSConnectionManager, ODPSCredentials, SchemaTypes
 LIST_RELATIONS_MACRO_NAME = "list_relations_without_caching"
 SHOW_CREATE_TABLE_MACRO_NAME = "show_create_table"
 RENAME_RELATION_MACRO_NAME = "rename_relation"
+
+
+@dataclass
+class OdpsConfig(AdapterConfig):
+    partitioned_by: Optional[List[Dict[str, str]]] = None
+    properties: Optional[Dict[str, str]] = None
 
 
 class ODPSAdapter(SQLAdapter):
@@ -24,6 +34,7 @@ class ODPSAdapter(SQLAdapter):
     ConnectionManager = ODPSConnectionManager
     Relation: TypeAlias = OdpsRelation
     Column: TypeAlias = OdpsColumn
+    AdapterSpecificConfigs: TypeAlias = OdpsConfig
 
     @property
     def odps(self) -> ODPS:
@@ -55,6 +66,11 @@ class ODPSAdapter(SQLAdapter):
     def convert_text_type(cls, agate_table, col_idx: int) -> str:
         return "string"
 
+    def timestamp_add_sql(self, add_to: str, number: int = 1, interval: str = "hour") -> str:
+        """the interval could be one of [dd, mm, yyyy, mi, ss, year, month, mon, day, hour, hh]'"""
+        # return f"{add_to} + interval '{number} {interval}'"
+        return f"dateadd({add_to}, {number}, '{interval}')"
+
     def create_schema(self, relation: BaseRelation) -> None:
         """ODPS does not support schemas, so this is a no-op"""
         pass
@@ -66,6 +82,15 @@ class ODPSAdapter(SQLAdapter):
             for relation in relations:
                 if relation.schema == relation.schema:
                     self.drop_relation(relation)
+
+    def drop_relation(self, relation):
+        if relation.type is None:
+            raise RelationTypeNullError(relation)
+
+        self.cache_dropped(relation)
+        table = self.get_odps_table_by_relation(relation)
+        if table:
+            table.drop()
 
     def quote(self, identifier):
         return "`{}`".format(identifier)
@@ -103,8 +128,10 @@ class ODPSAdapter(SQLAdapter):
 
         relations = []
         for table in self.odps.list_tables(prefix=prefix):
-            relations.append(OdpsRelation.from_odps_table(table))
-
+            try:
+                relations.append(OdpsRelation.from_odps_table(table))
+            except NoSuchObject:
+                pass
         return relations
 
     def get_odps_table_by_relation(self, relation: OdpsRelation):
@@ -114,13 +141,24 @@ class ODPSAdapter(SQLAdapter):
                 .quote(identifier=False)
                 .render()
             )
-            return self.odps.get_table(relation_name, project=relation.database)
+            return self.get_odps_table_if_exists(relation_name, project=relation.database)
         else:
-            return self.odps.get_table(relation.identifier, project=relation, schema=relation.schema)
+            return self.get_odps_table_if_exists(
+                relation.identifier, project=relation, schema=relation.schema
+            )
+
+    def get_odps_table_if_exists(self, name, project=None, schema=None) -> Optional[Table]:
+        if self.odps.exist_table(name, project=project, schema=schema):
+            return self.odps.get_table(name, project=project, schema=schema)
+        return None
 
     def get_columns_in_relation(self, relation: OdpsRelation):
         odps_table = self.get_odps_table_by_relation(relation)
-        return [OdpsColumn.from_odps_column(column) for column in odps_table.schema.get_columns()]
+        return (
+            [OdpsColumn.from_odps_column(column) for column in odps_table.schema.get_columns()]
+            if odps_table
+            else []
+        )
 
     def _get_one_catalog(
         self,
