@@ -6,18 +6,8 @@ from dbt.adapters.sql import SQLConnectionManager
 from dbt.logger import GLOBAL_LOGGER as logger
 from dbt.contracts.connection import AdapterResponse, ConnectionState, AdapterRequiredConfig
 from dbt.dataclass_schema import StrEnum
+from typing import Optional, Dict
 from .dbapi import ODPSConnection
-
-
-DEFAULT_HINTS = {
-    "odps.sql.allow.cartesian": "true",
-    "odps.sql.type.system.odps2": "true",
-    "odps.sql.hive.compatible": "true",
-    "odps.sql.reshuffle.dynamicpt": "false",
-    "odps.sql.groupby.skewindata": "true",
-    "hive.exec.dynamic.partition": "true",
-    "hive.exec.dynamic.partition.mode": "nonstrict",
-}
 
 
 @dataclass
@@ -36,6 +26,7 @@ class ODPSCredentials(Credentials):
     endpoint: str
     access_id: str
     secret_access_key: str
+    hints: Optional[Dict[str, str]]
     schema_type: SchemaTypes = SchemaTypes.PREFIX_SCHEMA
 
     _ALIASES = {"ak": "access_id", "sk": "secret_access_key"}
@@ -104,7 +95,7 @@ class ODPSConnectionManager(SQLConnectionManager):
                 access_id=credentials.access_id,
                 secret_access_key=credentials.secret_access_key,
                 project=credentials.database,
-                hints=DEFAULT_HINTS,
+                hints=credentials.hints,
             )
             if not handle.odps.exist_project(credentials.database):
                 logger.debug("Project {} does not exist".format(credentials.database))

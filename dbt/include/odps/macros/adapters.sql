@@ -120,8 +120,9 @@
       {{ get_columns_spec_ddl() }}
       {%- set sql = get_select_subquery(sql) %}
     {%- endif %}
-    {{ partitioned_by_clause() }}
-    {{ properties_clause() }}
+    {# {{ clustered_by_clause() }} --not supported yet #}
+    {# {{ partitioned_by_clause() }} --not supported yet #}
+    {# {{ properties_clause() }} --not supported yet #}
     {{ lifecycle_clause(temporary) }}
   as {{ sql }}
 {%- endmacro %}

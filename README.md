@@ -1,5 +1,6 @@
 v<p align="center">
-  <img src="https://raw.githubusercontent.com/dbt-labs/dbt/ec7dee39f793aa4f7dd3dae37282cc87664813e4/etc/dbt-logo-full.svg" alt="dbt logo" width="500"/>
+<img src="https://raw.githubusercontent.com/dbt-labs/dbt/ec7dee39f793aa4f7dd3dae37282cc87664813e4/etc/dbt-logo-full.svg" alt="dbt logo" width="500"/>
+
 </p>
 
 **[dbt](https://www.getdbt.com/)** enables data analysts and engineers to transform their data using the same practices that software engineers use to build applications.
@@ -7,23 +8,28 @@ v<p align="center">
 dbt is the T in ELT. Organize, cleanse, denormalize, filter, rename, and pre-aggregate the raw data in your warehouse so that it's ready for analysis.
 
 ## ODPS
+
 This repo contains the base code to help you start to build out your dbt-odps adapter plugin, for more information on how to build out the adapter please follow the [docs](https://docs.getdbt.com/docs/contributing/building-a-new-adapter)
 
 ** Note ** this `README` is meant to be replaced with what information would be required to use your adpater once your at a point todo so.
 
 ** Note **
+
 ### Adapter Scaffold default Versioning
+
 This adapter plugin follows [semantic versioning](https://semver.org/). The first version of this plugin is v1.4.0, in order to be compatible with dbt Core v1.4.0.
 
 It's also brand new! For ODPS-specific functionality, we will aim for backwards-compatibility wherever possible. We are likely to be iterating more quickly than most major-version-1 software projects. To that end, backwards-incompatible changes will be clearly communicated and limited to minor versions (once every three months).
 
- ## Getting Started
+## Getting Started
 
- #### Setting up Locally
+#### Setting up Locally
+
 - run `pip install -r dev-requirements.txt`.
 - cd directory into the `dbt-core` you'd like to be testing against and run `make dev`.
 
- #### Connect to Github
+#### Connect to Github
+
 - run `git init`.
 - Connect your lcoal code to a Github repo.
 
@@ -41,3 +47,7 @@ It's also brand new! For ODPS-specific functionality, we will aim for backwards-
 ## Code of Conduct
 
 Everyone interacting in the dbt project's codebases, issue trackers, chat rooms, and mailing lists is expected to follow the [dbt Code of Conduct](https://community.getdbt.com/code-of-conduct).
+
+## 注意事项
+
+写文档时需要注明 snapshot 在 odps 中具有局限性，其参考表必须是实体表，且在 sql 中没有对表结构进行修改，如果有修改，用户需要手动创建表，其原因是，snapshot 表必须是事务表，创建事务表时，不能使用子查询。
