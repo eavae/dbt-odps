@@ -4,6 +4,12 @@ from dbt.tests.util import run_sql_with_adapter
 
 class TestConnectionWithHints:
     @pytest.fixture(scope="class")
+    def project_config_update(self):
+        return {
+            "name": "test_connection_with_hints",
+        }
+
+    @pytest.fixture(scope="class")
     def dbt_profile_target(self, dbt_profile_target):
         dbt_profile_target.update(
             {

@@ -3,17 +3,15 @@ from dataclasses import dataclass
 from dbt.adapters.sql import SQLAdapter
 from dbt.adapters.base import AdapterConfig
 from dbt.adapters.base.relation import BaseRelation, InformationSchema
-from dbt.adapters.base.meta import available
 from dbt.contracts.graph.manifest import Manifest
-from dbt.exceptions import RelationTypeNullError
 from typing import List, Set, cast, Optional, Dict
 from typing_extensions import TypeAlias
 from odps import ODPS
 from odps.models import Table, TableSchema
-from odps.errors import NoSuchObject
+from odps.errors import NoSuchObject, ODPSError
 from .relation import OdpsRelation
 from .colums import OdpsColumn
-from .connections import ODPSConnectionManager, ODPSCredentials, SchemaTypes
+from .connections import ODPSConnectionManager, ODPSCredentials
 
 LIST_RELATIONS_MACRO_NAME = "list_relations_without_caching"
 SHOW_CREATE_TABLE_MACRO_NAME = "show_create_table"
@@ -73,61 +71,50 @@ class ODPSAdapter(SQLAdapter):
 
     def create_schema(self, relation: BaseRelation) -> None:
         """ODPS does not support schemas, so this is a no-op"""
-        pass
+        try:
+            self.odps.create_schema(relation.identifier, relation.database)
+        except ODPSError as e:
+            if e.code == "ODPS-0110061":
+                return
+            else:
+                raise e
 
-    def drop_schema(self, relation: BaseRelation) -> None:
+    def drop_schema(self, relation: OdpsRelation) -> None:
         """ODPS does not support schemas, so this is a no-op"""
-        if self.credentials.schema_type == SchemaTypes.PREFIX_SCHEMA:
-            relations = self.list_relations_without_caching(relation)
-            for relation in relations:
-                if relation.schema == relation.schema:
-                    self.drop_relation(relation)
-
-    def drop_relation(self, relation):
-        if relation.type is None:
-            raise RelationTypeNullError(relation)
-
-        self.cache_dropped(relation)
-        table = self.get_odps_table_by_relation(relation)
-        if table and not table.is_virtual_view:
-            table.drop()
+        try:
+            self.odps.delete_schema(relation.identifier, relation.database)
+        except ODPSError as e:
+            if e.code == "ODPS-0110061":
+                return
+            else:
+                raise e
 
     def quote(self, identifier):
         return "`{}`".format(identifier)
-
-    @available
-    def quote_for_rename(self, relation: OdpsRelation) -> str:
-        if relation.schema_type == SchemaTypes.PREFIX_SCHEMA:
-            return relation.quote_schema(relation.schema, relation.identifier)
-        return self.quote(relation.identifier)
 
     def check_schema_exists(self, database: str, schema: str) -> bool:
         """always return true, as ODPS does not have schemas."""
         return True
 
     def list_schemas(self, database: str) -> List[str]:
-        if self.credentials.schema_type == SchemaTypes.PREFIX_SCHEMA:
-            relations = self.list_relations_without_caching()
-            return list(dict.fromkeys([r.schema for r in relations]))
-        return []
+        try:
+            return [schema.name for schema in self.odps.list_schemas(database)]
+        except ODPSError as e:
+            if e.code == "ODPS-0110061":
+                return ["default"]
+            else:
+                raise e
 
     def list_relations_without_caching(
         self,
         schema_relation: OdpsRelation = None,
     ) -> List[OdpsRelation]:
-        # TODO: unit test
-        prefix = None
-        if schema_relation is not None:
-            # when no identifier, and schema exist, using schema as prefix to query
-            if (
-                schema_relation.identifier is None
-                and schema_relation.schema is not None
-                and schema_relation.schema_type == SchemaTypes.PREFIX_SCHEMA
-            ):
-                prefix = OdpsRelation.quote_schema(schema_relation.schema)
+        kwargs = {}
+        if schema_relation and schema_relation.schema != "default":
+            kwargs["schema"] = schema_relation.schema
 
         relations = []
-        for table in self.odps.list_tables(prefix=prefix):
+        for table in self.odps.list_tables(**kwargs):
             try:
                 relations.append(OdpsRelation.from_odps_table(table))
             except NoSuchObject:
@@ -135,21 +122,23 @@ class ODPSAdapter(SQLAdapter):
         return relations
 
     def get_odps_table_by_relation(self, relation: OdpsRelation):
-        if relation.schema_type == SchemaTypes.PREFIX_SCHEMA:
-            relation_name = (
-                relation.include(identifier=True, database=False, schema=False)
-                .quote(identifier=False)
-                .render()
-            )
-            return self.get_odps_table_if_exists(relation_name, project=relation.database)
-        else:
-            return self.get_odps_table_if_exists(
-                relation.identifier, project=relation, schema=relation.schema
-            )
+        return self.get_odps_table_if_exists(
+            relation.identifier,
+            project=relation.database,
+            schema=relation.schema,
+        )
 
     def get_odps_table_if_exists(self, name, project=None, schema=None) -> Optional[Table]:
-        if self.odps.exist_table(name, project=project, schema=schema):
-            return self.odps.get_table(name, project=project, schema=schema)
+        kwargs = {
+            "name": name,
+            "project": project,
+        }
+        if schema != "default":
+            kwargs["schema"] = schema
+
+        if self.odps.exist_table(**kwargs):
+            return self.odps.get_table(**kwargs)
+
         return None
 
     def get_columns_in_relation(self, relation: OdpsRelation):
@@ -168,21 +157,12 @@ class ODPSAdapter(SQLAdapter):
     ) -> agate.Table:
         rows = []
         for schema in schemas:
-            prefix = None
-            odps_schema = schema
-            if self.credentials.schema_type == SchemaTypes.PREFIX_SCHEMA:
-                prefix = OdpsRelation.quote_schema(schema)
-                odps_schema = None
-
-            for table in self.odps.list_tables(
-                prefix=prefix, project=information_schema.database, schema=odps_schema
-            ):
+            for table in self.odps.list_tables(project=information_schema.database, schema=schema):
                 table = cast(Table, table)
-                table_name = str(table.name).replace(prefix, "") if prefix else str(table.name)
                 table_rows = (
                     information_schema.database,
                     schema,
-                    table_name,
+                    table.name,
                     "VIEW" if table.is_virtual_view else "TABLE",
                     table.comment,
                     table.owner,

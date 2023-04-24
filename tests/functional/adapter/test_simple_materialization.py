@@ -1,3 +1,4 @@
+import pytest
 from dbt.tests.util import (
     run_dbt,
     check_result_nodes_by_name,
@@ -9,6 +10,17 @@ from tests.functional.adapter.utils import relation_from_name
 
 
 class TestSimpleMaterializationsODPS(BaseSimpleMaterializations):
+    @pytest.fixture(scope="class")
+    def dbt_profile_target(self, dbt_profile_target):
+        dbt_profile_target.update(
+            {
+                "hints": {
+                    "odps.sql.allow.cartesian": "true",
+                }
+            }
+        )
+        return dbt_profile_target
+
     def test_base(self, project):
         # tested seed command
         results = run_dbt(["seed"])

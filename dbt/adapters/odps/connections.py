@@ -5,17 +5,11 @@ from dbt.adapters.base import Credentials
 from dbt.adapters.sql import SQLConnectionManager
 from dbt.logger import GLOBAL_LOGGER as logger
 from dbt.contracts.connection import AdapterResponse, ConnectionState, AdapterRequiredConfig
-from dbt.dataclass_schema import StrEnum
 from typing import Optional, Dict
 from .dbapi import ODPSConnection
 
 
 @dataclass
-class SchemaTypes(StrEnum):
-    PREFIX_SCHEMA = "prefix_schema"
-
-
-@dataclass(order=False)
 class ODPSCredentials(Credentials):
     """
     Defines database specific credentials that get added to
@@ -26,8 +20,8 @@ class ODPSCredentials(Credentials):
     endpoint: str
     access_id: str
     secret_access_key: str
-    hints: Optional[Dict[str, str]]
-    schema_type: SchemaTypes = SchemaTypes.PREFIX_SCHEMA
+
+    hints: Optional[Dict[str, str]] = None
 
     _ALIASES = {"ak": "access_id", "sk": "secret_access_key"}
 
@@ -48,7 +42,7 @@ class ODPSCredentials(Credentials):
         """
         List of keys to display in the `dbt debug` output.
         """
-        return ("endpoint", "access_id", "database", "schema", "schema_type")
+        return ("endpoint", "access_id", "database", "schema")
 
 
 class ODPSConnectionManager(SQLConnectionManager):
@@ -90,13 +84,17 @@ class ODPSConnectionManager(SQLConnectionManager):
 
         credentials: ODPSCredentials = connection.credentials
         try:
-            handle = ODPSConnection(
+            kwargs = dict(
                 endpoint=credentials.endpoint,
                 access_id=credentials.access_id,
                 secret_access_key=credentials.secret_access_key,
                 project=credentials.database,
                 hints=credentials.hints,
             )
+            if credentials.schema != "default":
+                kwargs["schema"] = credentials.schema
+            handle = ODPSConnection(**kwargs)
+
             if not handle.odps.exist_project(credentials.database):
                 logger.debug("Project {} does not exist".format(credentials.database))
                 raise dbt.exceptions.FailedToConnectError(f"Project {credentials.database} does not exist.")

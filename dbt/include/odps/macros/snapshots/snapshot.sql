@@ -41,6 +41,9 @@
     {%- endfor -%})
 {%- endmacro %}
 
+{% macro odps__snapshot_get_time() -%}
+    {{ current_timestamp() }}
+{%- endmacro %}
 
 {% macro build_snapshot_full_refresh_insert_into(strategy, sql, target_relation) %}
     {%- set dest_columns = adapter.get_columns_in_relation(target_relation) | list -%}
@@ -57,9 +60,9 @@
     select
         {{ source_cols_csv }},
         {# the flowing order is important here #}
-        {{ strategy.updated_at }} as dbt_updated_at,
-        {{ strategy.updated_at }} as dbt_valid_from,
-        nullif({{ strategy.updated_at }}, {{ strategy.updated_at }}) as dbt_valid_to,
+        cast({{ strategy.updated_at }} as timestamp) as dbt_updated_at,
+        cast({{ strategy.updated_at }} as timestamp) as dbt_valid_from,
+        cast(nullif({{ strategy.updated_at }}, {{ strategy.updated_at }}) as timestamp)  as dbt_valid_to,
         {{ strategy.scd_id }} as dbt_scd_id
     from ({{ sql }})
 {% endmacro %}
@@ -89,9 +92,9 @@
             select
                 *,
                 {{ strategy.unique_key }} as dbt_unique_key,
-                {{ strategy.updated_at }} as dbt_updated_at,
-                {{ strategy.updated_at }} as dbt_valid_from,
-                nullif({{ strategy.updated_at }}, {{ strategy.updated_at }}) as dbt_valid_to,
+                cast({{ strategy.updated_at }} as timestamp) as dbt_updated_at,
+                cast({{ strategy.updated_at }} as timestamp) as dbt_valid_from,
+                cast(nullif({{ strategy.updated_at }}, {{ strategy.updated_at }}) as timestamp) as dbt_valid_to,
                 {{ strategy.scd_id }} as dbt_scd_id
             from ({{ source_sql }})
         ) as source_data
@@ -116,9 +119,9 @@
             select
                 *,
                 {{ strategy.unique_key }} as dbt_unique_key,
-                {{ strategy.updated_at }} as dbt_updated_at,
-                {{ strategy.updated_at }} as dbt_valid_from,
-                {{ strategy.updated_at }} as dbt_valid_to
+                cast({{ strategy.updated_at }} as timestamp) as dbt_updated_at,
+                cast({{ strategy.updated_at }} as timestamp) as dbt_valid_from,
+                cast({{ strategy.updated_at }} as timestamp) as dbt_valid_to
             from ({{ source_sql }})
         ) as source_data
         join (
