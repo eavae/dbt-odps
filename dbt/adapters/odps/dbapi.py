@@ -24,7 +24,6 @@ class ODPSCursor(Cursor):
         if async_:
             run_sql = odps.run_sql
 
-        print("Final SQL:\n {}".format(sql))
         self._instance = run_sql(sql, hints=self._hints)
 
 
