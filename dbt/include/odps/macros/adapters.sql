@@ -113,6 +113,20 @@
 
 {# tested #}
 {% macro odps__create_table_as(temporary, relation, sql) -%}
+  {%- if temporary -%}
+    {% call statement('drop_before_create') -%}
+      {%- if not relation.type -%}
+        {% do exceptions.raise_database_error("Cannot drop a relation with a blank type: " ~ relation.identifier) %}
+      {%- elif relation.type in ('table') -%}
+          drop table if exists {{ relation }}
+      {%- elif relation.type == 'view' -%}
+          drop view if exists {{ relation }}
+      {%- else -%}
+        {% do exceptions.raise_database_error("Unknown type '" ~ relation.type ~ "' for relation: " ~ relation.identifier) %}
+      {%- endif -%}
+    {%- endcall -%}
+  {%- endif -%}
+
   create table if not exists {{ relation }}
     {% set contract_config = config.get('contract') %}
     {% if contract_config.enforced %}
