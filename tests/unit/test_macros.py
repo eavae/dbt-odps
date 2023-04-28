@@ -25,7 +25,7 @@ class TestODPSMacros(unittest.TestCase):
     def __get_template(self, template_filename):
         return self.jinja_env.get_template(template_filename, globals=self.default_context)
 
-    def __run_macro(self, template, name, temporary, relation, sql=None):
+    def __run_macro(self, template, name, relation, sql=None):
         self.default_context["model"].alias = relation
 
         def dispatch(macro_name, macro_namespace=None, packages=None):
@@ -33,7 +33,7 @@ class TestODPSMacros(unittest.TestCase):
 
         self.default_context["adapter"].dispatch = dispatch
 
-        value = getattr(template.module, f"odps__{name}")(temporary, relation, sql)
+        value = getattr(template.module, f"odps__{name}")(False, relation, sql)
         return re.sub(r"\s\s+", " ", value)
 
     def test_macros_load(self):
@@ -42,34 +42,21 @@ class TestODPSMacros(unittest.TestCase):
     def test_macros_create_table_as(self):
         template = self.__get_template("adapters.sql")
 
-        sql = self.__run_macro(template, "create_table_as", False, "my_table", "select 1").strip()
+        sql = self.__run_macro(template, "create_table_as", "my_table", "select 1").strip()
         self.assertEqual(sql, "create table if not exists my_table as select 1")
-
-    def test_macros_create_table_as_temporary(self):
-        template = self.__get_template("adapters.sql")
-
-        sql = self.__run_macro(template, "create_table_as", True, "my_table", "select 1").strip()
-        self.assertEqual(sql, "create table if not exists my_table lifecycle 1 as select 1")
 
     def test_macros_create_table_with_lifecycle(self):
         template = self.__get_template("adapters.sql")
 
         self.config["lifecycle"] = 3
-        sql = self.__run_macro(template, "create_table_as", False, "my_table", "select 1").strip()
-        self.assertEqual(sql, "create table if not exists my_table lifecycle 3 as select 1")
-
-    def test_macro_create_table_as_temporary_with_lifecycle(self):
-        template = self.__get_template("adapters.sql")
-
-        self.config["lifecycle"] = 3
-        sql = self.__run_macro(template, "create_table_as", True, "my_table", "select 1").strip()
+        sql = self.__run_macro(template, "create_table_as", "my_table", "select 1").strip()
         self.assertEqual(sql, "create table if not exists my_table lifecycle 3 as select 1")
 
     def test_macro_create_table_as_with_properties(self):
         template = self.__get_template("adapters.sql")
 
         self.config["properties"] = {"transactional": "true"}
-        sql = self.__run_macro(template, "create_table_as", False, "my_table", "select 1").strip()
+        sql = self.__run_macro(template, "create_table_as", "my_table", "select 1").strip()
         self.assertEqual(
             sql, "create table if not exists my_table tblproperties('transactional'='true') as select 1"
         )
@@ -78,5 +65,5 @@ class TestODPSMacros(unittest.TestCase):
         template = self.__get_template("adapters.sql")
 
         self.config["partitioned_by"] = [{"col_name": "dt"}]
-        sql = self.__run_macro(template, "create_table_as", False, "my_table", "select 1").strip()
+        sql = self.__run_macro(template, "create_table_as", "my_table", "select 1").strip()
         self.assertEqual(sql, "create table if not exists my_table partitioned by (dt string) as select 1")

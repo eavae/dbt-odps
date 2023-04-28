@@ -17,6 +17,16 @@ class OdpsRelation(BaseRelation):
     quote_character: str = "`"
 
     @classmethod
+    def create(cls, database=None, schema=None, identifier=None, type=None, **kwargs):
+        if schema != "default":
+            kwargs.update(
+                {
+                    "include_policy": OdpsIncludePolicy(schema=True),
+                }
+            )
+        return super().create(database, schema, identifier, type, **kwargs)
+
+    @classmethod
     def from_odps_table(cls, table: Table):
         identifier = table.name
         schema = table.get_schema()
