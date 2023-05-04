@@ -36,17 +36,36 @@ DBT features:
 
 ## Getting Started
 
-#### Install DBT
-
-```bash
-python -m pip install dbt
-```
-
-#### Install DBT-ODPS
+### Install DBT-ODPS
 
 ```bash
 python -m pip install dbt-odps
 ```
+
+### How to Configure?
+
+#### For Fresh Codebase
+
+Run following command after installing dbt-odps:
+
+```bash
+dbt init
+```
+
+#### For Existing Codebase
+
+Read more in here: https://docs.getdbt.com/docs/core/connection-profiles
+
+Configuration options:
+
+| Property          | Description                                                  | Example                                              |
+| ----------------- | ------------------------------------------------------------ | ---------------------------------------------------- |
+| Endpoint          | The endpoint of odps, read more in https://help.aliyun.com/document_detail/34951.html | http://service.cn-shanghai.maxcompute.aliyun.com/api |
+| database          | The **project name** of odps, which you can find in https://maxcompute.console.aliyun.com/{your area}/project-list | odps-test-project                                    |
+| schema            | Using **default** if you don't know what is schema.          | default                                              |
+| access_id         | access id                                                    | LTAXXXXXXXXX                                         |
+| secret_access_key | secret access key                                            | bZXXXXXXXXXX                                         |
+| type              | odps                                                         | odps                                                 |
 
 ## NOTES
 
