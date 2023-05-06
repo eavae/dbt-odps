@@ -36,11 +36,11 @@ class TestOdpsAdapter(unittest.TestCase):
             "outputs": {
                 "test": {
                     "type": "odps",
-                    "endpoint": os.environ.get("ODPS_ENDPOINT"),
-                    "access_id": os.environ.get("ODPS_ACCESS_ID"),
-                    "secret_access_key": os.environ.get("ODPS_SECRET_ACCESS_KEY"),
-                    "database": os.environ.get("ODPS_PROJECT"),
-                    "schema": "public",
+                    "endpoint": "mock_endpoint",
+                    "access_id": "mock_access_id",
+                    "secret_access_key": "mock_secret_access_key",
+                    "database": "mock_database",
+                    "schema": "default",
                 }
             },
             "target": "test",
