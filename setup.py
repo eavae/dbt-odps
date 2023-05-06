@@ -1,15 +1,16 @@
 #!/usr/bin/env python
 from setuptools import find_namespace_packages, setup
+from pathlib import Path
 
-package_name = "dbt-odps"
-# make sure this always matches dbt/adapters/{adapter}/__version__.py
-package_version = "1.4.1"
-description = """The ODPS adapter plugin for dbt"""
+root_dir = Path(__file__).parent
+long_description = (root_dir / "README.md").read_text()
 
 setup(
-    name=package_name,
-    version=package_version,
-    description=description,
+    name="dbt-odps",
+    version="0.0.1",
+    description="""The ODPS (MaxCompute) adapter for DBT (data build tool)""",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
     author="eavea",
     author_email="lijingyu68@gmail.com",
     url="https://github.com/ai-excelsior/F2AI",
