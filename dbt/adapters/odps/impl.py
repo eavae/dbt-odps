@@ -16,7 +16,6 @@ from .colums import OdpsColumn
 from .connections import ODPSConnectionManager, ODPSCredentials
 
 LIST_RELATIONS_MACRO_NAME = "list_relations_without_caching"
-SHOW_CREATE_TABLE_MACRO_NAME = "show_create_table"
 RENAME_RELATION_MACRO_NAME = "rename_relation"
 
 
