@@ -211,22 +211,16 @@
 
         {% do create_columns(target_relation, missing_columns) %}
 
-        {% set source_columns = adapter.get_columns_in_relation(staging_table)
-                                    | rejectattr('name', 'equalto', 'dbt_change_type')
-                                    | rejectattr('name', 'equalto', 'DBT_CHANGE_TYPE')
-                                    | rejectattr('name', 'equalto', 'dbt_unique_key')
-                                    | rejectattr('name', 'equalto', 'DBT_UNIQUE_KEY')
-                                    | list %}
-
-        {% set quoted_source_columns = [] %}
-        {% for column in source_columns %}
-            {% do quoted_source_columns.append(adapter.quote(column.name)) %}
+        {% set target_columns = adapter.get_columns_in_relation(target_relation) %}
+        {% set quoted_target_columns = [] %}
+        {% for column in target_columns %}
+            {% do quoted_target_columns.append(column.quoted) %}
         {% endfor %}
 
         {% set final_sql = snapshot_merge_sql(
                 target = target_relation,
                 source = staging_table,
-                insert_cols = quoted_source_columns
+                insert_cols = quoted_target_columns
             )
         %}
     {% endif %}

@@ -9,6 +9,7 @@ from dbt.tests.adapter.basic.files import (
 from tests.functional.adapter.files import (
     seeds_all_added_1hour_csv,
     seeds_name_updated_csv,
+    seeds_base_newcolumns_added_1hour_csv,
 )
 
 
@@ -49,3 +50,38 @@ class TestSnapshotTimestampODPS(BaseSnapshotTimestamp):
 
         results = run_dbt(["snapshot", "--vars", "seed_name: name_updated"])
         check_relation_rows(project, "ts_snapshot", 30)
+
+
+class TestSnapshotTimestampWithColumnMutationsODPS(BaseSnapshotTimestamp):
+    @pytest.fixture(scope="class")
+    def seeds(self):
+        return {
+            "base.csv": seeds_base_csv,
+            "newcolumns.csv": seeds_newcolumns_csv,
+            "added_1hour_newcolumns.csv": seeds_base_newcolumns_added_1hour_csv,
+        }
+
+    @pytest.fixture(scope="class")
+    def project_config_update(self):
+        return {
+            "name": "snapshot_strategy_timestamp_with_column_mutations",
+            "snapshots": {"+properties": {"transactional": "true"}},
+        }
+
+    def test_snapshot_timestamp(self, project):
+        # seed command
+        results = run_dbt(["seed"])
+        assert len(results) == 3
+
+        # snapshot command
+        results = run_dbt(["snapshot"])
+        assert len(results) == 1
+        check_relation_rows(project, "ts_snapshot", 10)
+
+        # seeds new columns, timestamp not changed, so data not updated
+        results = run_dbt(["snapshot", "--vars", "seed_name: newcolumns"])
+        check_relation_rows(project, "ts_snapshot", 10)
+
+        # seeds new columns with timestamp updated
+        results = run_dbt(["snapshot", "--vars", "seed_name: added_1hour_newcolumns"])
+        check_relation_rows(project, "ts_snapshot", 20)

@@ -58,6 +58,19 @@
 {%- endmacro -%}
 
 
+{% macro default__create_columns(relation, columns) %}
+  {% if (columns | length) > 0 %}
+    {% call statement('alter_table_add_columns') %}
+      alter table {{ relation }} add columns (
+        {% for column in columns -%}
+          {{ column.quoted }} {{ column.data_type }} comment '{{ column.comment }}'
+          {%- if not loop.last %},{% endif -%}
+        {% endfor %}
+      )
+    {% endcall %}
+  {% endif %}
+{% endmacro %}
+
 {# tested: using cast to convert types #}
 {% macro odps__load_csv_rows(model, agate_table) %}
   {% set batch_size = get_batch_size() %}
