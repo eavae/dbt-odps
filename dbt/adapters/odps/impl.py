@@ -4,6 +4,8 @@ from dbt.adapters.sql import SQLAdapter
 from dbt.adapters.base import AdapterConfig
 from dbt.adapters.base.relation import BaseRelation, InformationSchema
 from dbt.contracts.graph.manifest import Manifest
+from dbt.exceptions import DbtRuntimeError
+from dbt.adapters.base.meta import available
 from typing import List, Set, cast, Optional, Dict
 from typing_extensions import TypeAlias
 from odps import ODPS
@@ -188,5 +190,17 @@ class ODPSAdapter(SQLAdapter):
         )
         return table
 
+    @available
+    def write_relation(self, relation: OdpsRelation, agate_table: agate.Table, **kwargs) -> None:
+        odps_table = self.get_odps_table_if_exists(
+            relation.identifier,
+            project=relation.database,
+            schema=relation.schema,
+        )
 
-# may require more build out to make more user friendly to confer with team and community.
+        if not odps_table:
+            raise DbtRuntimeError(f"Table {relation.identifier} does not exist.")
+
+        with odps_table.open_writer(overwrite=True) as writer:
+            records = [row.values() for row in agate_table.rows]
+            writer.write(records)
