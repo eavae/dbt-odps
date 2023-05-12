@@ -52,6 +52,34 @@
   {{ return(adapter.dispatch('create_table_like', 'dbt')(relation, from_relation)) }}
 {%- endmacro -%}
 
+{% macro odps__get_insert_into_sql(target_relation, source_relation) %}
+  {%- if target_relation.type != 'table' -%}
+    {%- do exceptions.raise_database_error("Cannot insert into a table like a non-table relation: " ~ target_relation.identifier) -%}
+  {%- endif -%}
+
+  {% set partitioned_by = config.get('partitioned_by', []) %}
+  {% set partition_cols = partitioned_by | map(attribute='col_name') | list %}
+  {% set target_columns = adapter.get_columns_in_relation(target_relation) %}
+
+  {% set sql %}
+    insert into table {{ target_relation }}
+
+    {% if (partition_cols | length) > 0 -%}
+    partition ({{ partition_cols | join(', ') }})
+    {%- endif %}
+
+    select
+      {% for col in target_columns -%}
+        {%- if col.name not in partition_cols -%}
+        {{ col.name }}{% if not loop.last %}, {% endif %}
+        {%- endif -%}
+      {%- endfor %}
+      {% if (partition_cols | length) > 0 %}, {{ partition_cols | join(', ') }}{% endif %}
+    from {{ source_relation }}
+  {% endset %}
+
+  {{ return(sql) }}
+{% endmacro %}
 
 {%- macro odps__current_timestamp() -%}
   current_timestamp()

@@ -39,10 +39,15 @@
     {%- do exceptions.raise_database_error("Cannot create a table like a non-table relation: " ~ from_relation.identifier) -%}
   {%- endif -%}
 
+  {%- set partitioned_by = config.get('partitioned_by', []) -%}
+  {%- set exclude_col_names = partitioned_by | map(attribute='col_name') | list -%}
   {%- set columns = adapter.get_columns_in_relation(from_relation) -%}
+
   create table if not exists {{ relation }} (
   {% for column in columns -%}
+    {%- if column.name not in exclude_col_names -%}
     {{ column.quoted }} {{ column.data_type }} comment '{{ column.comment or "" }}'{{ ',' if not loop.last }}
+    {%- endif -%}
   {% endfor %}
   )
   {{ partitioned_by_clause() }}

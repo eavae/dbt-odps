@@ -9,28 +9,6 @@
     {{ current_timestamp() }}
 {%- endmacro %}
 
-{% macro build_snapshot_full_refresh_insert_into(strategy, sql, target_relation) %}
-    {%- set dest_columns = adapter.get_columns_in_relation(target_relation) | list -%}
-    {%- set dest_cols_csv = dest_columns | map(attribute='quoted') | join(', ') -%}
-    {%- set source_columns = dest_columns
-                            | rejectattr('name', 'equalto', 'dbt_scd_id')
-                            | rejectattr('name', 'equalto', 'dbt_updated_at')
-                            | rejectattr('name', 'equalto', 'dbt_valid_from')
-                            | rejectattr('name', 'equalto', 'dbt_valid_to')
-                            | list -%}
-    {%- set source_cols_csv = source_columns | map(attribute='quoted') | join(', ') -%}
-
-    insert into {{ target_relation }} ({{ dest_cols_csv }})
-    select
-        {{ source_cols_csv }},
-        {# the flowing order is important here #}
-        cast({{ strategy.updated_at }} as timestamp) as dbt_updated_at,
-        cast({{ strategy.updated_at }} as timestamp) as dbt_valid_from,
-        cast(nullif({{ strategy.updated_at }}, {{ strategy.updated_at }}) as timestamp)  as dbt_valid_to,
-        {{ strategy.scd_id }} as dbt_scd_id
-    from ({{ sql }})
-{% endmacro %}
-
 
 {% macro odps__snapshot_merge_sql(target, source, insert_cols) -%}
     merge into {{ target }} as DBT_INTERNAL_DEST
@@ -191,10 +169,8 @@
         {% call statement('create_table_like') %}
             {{ create_table_like(target_relation, staging_table) }}
         {% endcall %}
-
-        {% set final_sql %}
-        insert into table {{ target_relation }} select * from {{ staging_table }}
-        {% endset %}
+        
+        {% set final_sql = odps__get_insert_into_sql(target_relation, staging_table) %}
     {% else %}
         {{ adapter.valid_snapshot_target(target_relation) }}
 
@@ -208,13 +184,16 @@
                                     | rejectattr('name', 'equalto', 'dbt_unique_key')
                                     | rejectattr('name', 'equalto', 'DBT_UNIQUE_KEY')
                                     | list %}
-
+        {% set partitioned_by = config.get('partitioned_by', []) %}
+        {% set partition_cols = partitioned_by | map(attribute='col_name') | list %}
+        {% set missing_columns = missing_columns | rejectattr('name', 'in', partition_cols) | list %}
         {% do create_columns(target_relation, missing_columns) %}
 
         {% set target_columns = adapter.get_columns_in_relation(target_relation) %}
         {% set quoted_target_columns = [] %}
-        {% for column in target_columns %}
-            {% do quoted_target_columns.append(column.quoted) %}
+        {% for column in target_columns %}{% do quoted_target_columns.append(column.quoted) %}{% endfor %}
+        {% for partition_col in partition_cols %}
+            {% do quoted_target_columns.append(adapter.quote(partition_col)) %}
         {% endfor %}
 
         {% set final_sql = snapshot_merge_sql(
