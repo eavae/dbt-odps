@@ -133,6 +133,20 @@
   {% endif %}
 {% endmacro %}
 
+
+{% macro odps__get_incremental_append_sql(arg_dict) %}
+  {%- set target_relation = arg_dict["target_relation"] -%}
+  {%- set temp_relation = arg_dict["temp_relation"] -%}
+  {%- set dest_columns = arg_dict["dest_columns"] -%}
+  {%- set dest_cols_csv = get_quoted_csv(dest_columns | map(attribute="name")) -%}
+
+  {%- set sql -%}
+  insert into {{ target_relation }} ({{ dest_cols_csv }}) select {{ dest_cols_csv }} from {{ temp_relation }}
+  {%- endset -%}
+
+  {{ return(sql) }}
+{% endmacro %}
+
 {# tested: using cast to convert types #}
 {% macro odps__load_csv_rows(model, agate_table) %}
   {% set batch_size = get_batch_size() %}
