@@ -170,7 +170,7 @@
             {{ create_table_like(target_relation, staging_table) }}
         {% endcall %}
         
-        {% set final_sql = odps__get_insert_into_sql(target_relation, staging_table) %}
+        {% set final_sql = odps__get_insert_into_sql(target_relation, staging_table, overwrite=true) %}
     {% else %}
         {{ adapter.valid_snapshot_target(target_relation) }}
 

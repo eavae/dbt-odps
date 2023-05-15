@@ -51,6 +51,7 @@
   {% endfor %}
   )
   {{ partitioned_by_clause() }}
+  {{ clustered_by_clause() }}
   {{ table_properties_clause() }}
   {{ lifecycle_clause(false) }}
 {%- endmacro -%}

@@ -48,11 +48,45 @@
 {%- endmacro -%}
 
 
+{% macro clustered_by_clause() %}
+  {{ return(adapter.dispatch('clustered_by_clause', 'dbt')()) }}
+{%- endmacro -%}
+
+{% macro odps__clustered_by_clause() %}
+  {%- set clustered_by = config.get('clustered_by', []) -%}
+  {%- set range_clustered_by = config.get('range_clustered_by', []) -%}
+  {%- set sorted_by = config.get('sorted_by', []) -%}
+  {%- set has_clustered_by = (clustered_by | length) > 0 -%}
+  {%- set has_range_clustered_by = (range_clustered_by | length) > 0 -%}
+  {%- set has_sorted_by = (sorted_by | length) > 0 -%}
+
+  {%- if has_clustered_by -%}
+    clustered by ({{ clustered_by | join(', ') }})
+  {%- endif %}
+  {%- if not has_clustered_by and has_range_clustered_by -%}
+    range clustered by ({{ range_clustered_by | join(', ') }})
+  {%- endif %}
+  {% if (has_clustered_by or has_range_clustered_by) and has_sorted_by -%}
+    sorted by (
+      {%- for item in sorted_by -%}
+      {%- if item is string -%}
+        {{ item }}
+      {%- else -%}
+        {{ item['col_name'] }} {{ item['order'] }}
+      {%- endif -%}{%- if not loop.last %}, {% endif -%}
+      {%- endfor -%}
+    )
+  {%- endif %}
+  {% if has_clustered_by and config.get('number_of_buckets') is not none %}
+  into {{ config.get('number_of_buckets') }} buckets
+  {%- endif  %}
+{%- endmacro -%}
+
 {% macro create_table_like(relation, from_relation) %}
   {{ return(adapter.dispatch('create_table_like', 'dbt')(relation, from_relation)) }}
 {%- endmacro -%}
 
-{% macro odps__get_insert_into_sql(target_relation, source_relation) %}
+{% macro odps__get_insert_into_sql(target_relation, source_relation, overwrite=false) %}
   {%- if target_relation.type != 'table' -%}
     {%- do exceptions.raise_database_error("Cannot insert into a table like a non-table relation: " ~ target_relation.identifier) -%}
   {%- endif -%}
@@ -62,7 +96,7 @@
   {% set target_columns = adapter.get_columns_in_relation(target_relation) %}
 
   {% set sql %}
-    insert into table {{ target_relation }}
+    insert {{ 'overwrite' if overwrite else 'into' }} table {{ target_relation }}
 
     {% if (partition_cols | length) > 0 -%}
     partition ({{ partition_cols | join(', ') }})
